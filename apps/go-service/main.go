@@ -13,34 +13,16 @@ func main() {
 		port = "8080"
 	}
 
-	// Handler for the root path
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("Go service: Received request for %s from %s", r.URL.Path, r.RemoteAddr)
-		fmt.Fprintf(w, "Hello from the Go service! 🚀\nVersion: v1.0.0\nHostname: %s", getHostname())
+		hostname, _ := os.Hostname()
+		fmt.Fprintf(w, "Hello from Go service! 🚀\nHostname: %s\nVersion: v1.0.0\n", hostname)
 	})
 
-	// Handler for Kubernetes health probes
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
 
-	// Ready probe
-	http.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("Ready"))
-	})
-
 	log.Printf("Go server starting on port %s...", port)
-	if err := http.ListenAndServe(":"+port, nil); err != nil {
-		log.Fatalf("Failed to start Go server: %v", err)
-	}
-}
-
-func getHostname() string {
-	hostname, err := os.Hostname()
-	if err != nil {
-		return "unknown"
-	}
-	return hostname
+	http.ListenAndServe(":"+port, nil)
 }

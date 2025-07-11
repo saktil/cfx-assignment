@@ -6,6 +6,7 @@ resources:
   - go-service.yml
   - node-deployment.yml
   - node-service.yml
+  - loadbalancer.yml
 
 commonLabels:
   environment: base

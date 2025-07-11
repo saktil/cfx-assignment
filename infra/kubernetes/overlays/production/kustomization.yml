@@ -10,11 +10,10 @@ patchesStrategicMerge:
 commonLabels:
   environment: production
 
-# Image tags will be updated by CI/CD pipeline
 images:
-- name: registry.digitalocean.com/monorepo-registry/go-service
-  newName: registry.digitalocean.com/monorepo-registry/go-service
+- name: registry.digitalocean.com/cfx/go-service
+  newName: registry.digitalocean.com/cfx/go-service
   newTag: latest
-- name: registry.digitalocean.com/monorepo-registry/node-service
-  newName: registry.digitalocean.com/monorepo-registry/node-service
+- name: registry.digitalocean.com/cfx/node-service
+  newName: registry.digitalocean.com/cfx/node-service
   newTag: latest
