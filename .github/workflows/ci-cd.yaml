@@ -1,53 +1,56 @@
-name: Monorepo CI/CD Pipeline
+name: Simple CI/CD Pipeline
 
 on:
   push:
-    branches: [ "main" ]
-  pull_request:
     branches: [ "main" ]
 
 env:
   REGISTRY: registry.digitalocean.com/cfx
 
 jobs:
-  changes:
-    runs-on: ubuntu-latest
-    outputs:
-      services: ${{ steps.filter.outputs.changes }}
-      has_changes: ${{ steps.filter.outputs.changes != '[]' }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
-      - name: Check for changes
-        uses: dorny/paths-filter@v2
-        id: filter
-        with:
-          filters: |
-            go-service:
-              - 'apps/go-service/**'
-            node-service:
-              - 'apps/node-service/**'
-      
-      # Force build all services if this is the initial setup
-      - name: Force initial build
-        id: force_build
-        if: steps.filter.outputs.changes == '[]'
-        run: |
-          # Check if images exist in registry, if not, build all services
-          if ! doctl registry repository list-tags cfx/go-service >/dev/null 2>&1; then
-            echo "changes=[\"go-service\",\"node-service\"]" >> $GITHUB_OUTPUT
-          else
-            echo "changes=[]" >> $GITHUB_OUTPUT
-          fi
-        env:
-          DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
-
   build-and-push:
-    needs: changes
-    if: ${{ needs.changes.outputs.services != '[]' }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: ${{ fromJson(needs.changes.outputs.services) }}
-    # ... rest of the job
+        service: [go-service, node-service]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Log in to DigitalOcean Container Registry
+        run: doctl registry login --expiry-seconds 1200
+
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/${{ matrix.service }}
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ matrix.service }}:latest
+            ${{ env.REGISTRY }}/${{ matrix.service }}:${{ github.sha }}
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Save DigitalOcean kubeconfig
+        run: doctl kubernetes cluster kubeconfig save monorepo-k8s-cluster
+
+      - name: Deploy to Kubernetes
+        run: kubectl apply -k infra/kubernetes/overlays/production
