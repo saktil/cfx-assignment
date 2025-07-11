@@ -50,7 +50,7 @@ jobs:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
       - name: Save DigitalOcean kubeconfig
-        run: doctl kubernetes cluster kubeconfig save monorepo-k8s-cluster
+        run: doctl kubernetes cluster kubeconfig save 245ea8cc-395f-415f-8d7c-e2363b9c2035
 
       - name: Deploy to Kubernetes
         run: kubectl apply -k infra/kubernetes/overlays/production
