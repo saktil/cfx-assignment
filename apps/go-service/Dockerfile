@@ -1,26 +1,51 @@
-# Stage 1: Build the Go binary
+# Multi-stage build for minimal production image
 FROM golang:1.21-alpine AS builder
 
+# Set working directory
 WORKDIR /app
 
-# Copy Go module files and download dependencies to leverage Docker cache
-COPY go.mod go.sum./
+# Install git for go mod download
+RUN apk add --no-cache git
+
+# Copy go mod files
+COPY go.mod go.sum ./
+
+# Download dependencies
 RUN go mod download
 
-# Copy the rest of the source code
-COPY..
+# Copy source code
+COPY . .
 
-# Build the application into a statically linked binary
-RUN CGO_ENABLED=0 GOOS=linux go build -o /go-service
+# Build the application
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o go-service .
 
-# Stage 2: Create the final, minimal production image
-FROM scratch
+# Production stage
+FROM alpine:latest
 
-# Copy only the compiled binary from the builder stage
-COPY --from=builder /go-service /go-service
+# Install ca-certificates for HTTPS requests
+RUN apk --no-cache add ca-certificates
 
-# Expose the port the application runs on
+# Create non-root user
+RUN adduser -D -s /bin/sh appuser
+
+# Set working directory
+WORKDIR /app
+
+# Copy binary from builder stage
+COPY --from=builder /app/go-service .
+
+# Change ownership
+RUN chown appuser:appuser go-service
+
+# Switch to non-root user
+USER appuser
+
+# Expose port
 EXPOSE 8080
 
-# Set the entrypoint for the container
-ENTRYPOINT ["/go-service"]
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/healthz || exit 1
+
+# Run the application
+CMD ["./go-service"]

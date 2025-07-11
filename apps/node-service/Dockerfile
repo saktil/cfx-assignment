@@ -1,26 +1,40 @@
-# Stage 1: Install dependencies
+# Multi-stage build for production
 FROM node:20-alpine AS builder
 
+# Set working directory
 WORKDIR /app
 
-# Copy package files and install production dependencies only
-COPY package*.json./
-RUN npm ci --only=production
+# Copy package files
+COPY package*.json ./
 
-# Stage 2: Create the final production image
+# Install dependencies
+RUN npm ci --only=production --silent
+
+# Production stage
 FROM node:20-alpine
 
+# Create app directory
 WORKDIR /app
 
-# Create a non-root user for security best practices
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
-USER appuser
+# Create non-root user
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001
 
-# Copy installed dependencies and source code from the builder stage
-COPY --from=builder /app/node_modules./node_modules
-COPY server.js.
+# Copy dependencies from builder
+COPY --from=builder /app/node_modules ./node_modules
 
+# Copy source code
+COPY --chown=nodejs:nodejs server.js ./
+
+# Switch to non-root user
+USER nodejs
+
+# Expose port
 EXPOSE 3000
 
-# Define the command to run the application
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:3000/healthz', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
+
+# Start the application
 CMD ["node", "server.js"]

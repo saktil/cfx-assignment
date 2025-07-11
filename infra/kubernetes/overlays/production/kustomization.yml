@@ -1,16 +1,20 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+
 bases:
-  -../../base
+  - ../../base
 
 patchesStrategicMerge:
   - replica-patch.yml
 
-# This section is updated by the CI/CD pipeline
+commonLabels:
+  environment: production
+
+# Image tags will be updated by CI/CD pipeline
 images:
-- name: your-registry/go-service
-  newName: your-registry/go-service
+- name: registry.digitalocean.com/monorepo-registry/go-service
+  newName: registry.digitalocean.com/monorepo-registry/go-service
   newTag: latest
-- name: your-registry/node-service
-  newName: your-registry/node-service
+- name: registry.digitalocean.com/monorepo-registry/node-service
+  newName: registry.digitalocean.com/monorepo-registry/node-service
   newTag: latest
