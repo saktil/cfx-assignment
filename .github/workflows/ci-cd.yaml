@@ -7,41 +7,33 @@ on:
     branches: [ "main" ]
 
 jobs:
-  # This job determines which services have changed
+  # This job uses dorny/paths-filter to determine which services have changed.
+  # It outputs a JSON array of changed services, e.g., '["go-service", "node-service"]'
   changes:
     runs-on: ubuntu-latest
     outputs:
-      go-service: ${{ steps.filter.outputs.go-service }}
-      node-service: ${{ steps.filter.outputs.node-service }}
+      services: ${{ steps.filter.outputs.changes }}
     steps:
-    - uses: actions/checkout@v4
-    - uses: dorny/paths-filter@v2
-      id: filter
-      with:
-        filters: |
-          go-service:
-            - 'apps/go-service/**'
-          node-service:
-            - 'apps/node-service/**'
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v2
+        id: filter
+        with:
+          filters: |
+            go-service:
+              - 'apps/go-service/**'
+            node-service:
+              - 'apps/node-service/**'
 
   # This job builds, scans, and pushes images for changed services
   build-and-push:
     needs: changes
-    # Run this job only if at least one service has changed
-    if: needs.changes.outputs.go-service == 'true' |
-
-| needs.changes.outputs.node-service == 'true'
+    # The job will only run if the 'services' output array is not empty.
+    if: ${{ needs.changes.outputs.services!= '' }}
     runs-on: ubuntu-latest
     strategy:
+      # The matrix is dynamically created from the JSON array output by the 'changes' job.
       matrix:
-        # Create a matrix of services that have changed
-        service:
-          - ${{ needs.changes.outputs.go-service == 'true' && 'go-service' |
-
-| '' }}
-          - ${{ needs.changes.outputs.node-service == 'true' && 'node-service' |
-
-| '' }}
+        service: ${{ fromJson(needs.changes.outputs.services) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -77,6 +69,7 @@ jobs:
         uses: github/codeql-action/upload-sarif@v2
         with:
           sarif_file: 'trivy-results.sarif'
+          category: ${{ matrix.service }} # Differentiate scans in the Security tab
 
       - name: Build and push final image
         uses: docker/build-push-action@v5
@@ -87,7 +80,9 @@ jobs:
 
   # This job deploys the new images to Kubernetes
   deploy:
-    needs: build-and-push
+    # This job depends on the build-and-push job completing successfully.
+    needs: [changes, build-and-push]
+    if: ${{ needs.build-and-push.result == 'success' && needs.changes.outputs.services!= '' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -109,8 +104,11 @@ jobs:
       - name: Update Kubernetes manifests with new image tags
         run: |
           cd infra/kubernetes/overlays/production
-          kustomize edit set image ghcr.io/${{ github.repository_owner }}/go-service=ghcr.io/${{ github.repository_owner }}/go-service:${{ github.sha }}
-          kustomize edit set image ghcr.io/${{ github.repository_owner }}/node-service=ghcr.io/${{ github.repository_owner }}/node-service:${{ github.sha }}
+          # Loop through the changed services and update the image for each one
+          for service in ${{ join(fromJson(needs.changes.outputs.services), ' ') }}; do
+            echo "Updating image for $service"
+            kustomize edit set image your-registry/$service=ghcr.io/${{ github.repository_owner }}/$service:${{ github.sha }}
+          done
 
       - name: Deploy to Kubernetes
         run: kubectl apply -k infra/kubernetes/overlays/production
