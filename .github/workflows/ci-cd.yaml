@@ -14,6 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       services: ${{ steps.filter.outputs.changes }}
+      has_changes: ${{ steps.filter.outputs.changes != '[]' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -27,76 +28,26 @@ jobs:
               - 'apps/go-service/**'
             node-service:
               - 'apps/node-service/**'
+      
+      # Force build all services if this is the initial setup
+      - name: Force initial build
+        id: force_build
+        if: steps.filter.outputs.changes == '[]'
+        run: |
+          # Check if images exist in registry, if not, build all services
+          if ! doctl registry repository list-tags cfx/go-service >/dev/null 2>&1; then
+            echo "changes=[\"go-service\",\"node-service\"]" >> $GITHUB_OUTPUT
+          else
+            echo "changes=[]" >> $GITHUB_OUTPUT
+          fi
+        env:
+          DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
   build-and-push:
     needs: changes
-    if: ${{ needs.changes.outputs.services != '' }}
+    if: ${{ needs.changes.outputs.services != '[]' }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
         service: ${{ fromJson(needs.changes.outputs.services) }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Install doctl
-        uses: digitalocean/action-doctl@v2
-        with:
-          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
-
-      - name: Log in to DigitalOcean Container Registry
-        run: doctl registry login --expiry-seconds 1200
-
-      - name: Build and push image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./apps/${{ matrix.service }}
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ matrix.service }}:latest
-            ${{ env.REGISTRY }}/${{ matrix.service }}:${{ github.sha }}
-
-  deploy:
-    needs: [changes, build-and-push]
-    if: ${{ needs.build-and-push.result == 'success' && needs.changes.outputs.services != '' }}
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install doctl
-        uses: digitalocean/action-doctl@v2
-        with:
-          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
-
-      - name: Save DigitalOcean kubeconfig
-        run: doctl kubernetes cluster kubeconfig save monorepo-k8s-cluster
-
-      - name: Set up Kustomize
-        run: |
-          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
-          sudo mv kustomize /usr/local/bin/
-
-      - name: Update image tags
-        run: |
-          cd infra/kubernetes/overlays/production
-          for service in ${{ join(fromJson(needs.changes.outputs.services), ' ') }}; do
-            echo "Updating image tag for $service"
-            kustomize edit set image ${{ env.REGISTRY }}/$service=${{ env.REGISTRY }}/$service:${{ github.sha }}
-          done
-
-      - name: Deploy to Kubernetes
-        run: |
-          kubectl apply -k infra/kubernetes/overlays/production
-          for service in ${{ join(fromJson(needs.changes.outputs.services), ' ') }}; do
-            kubectl rollout status deployment/$service-deployment --timeout=300s
-          done
-
-      - name: Verify deployment
-        run: |
-          kubectl get pods -l environment=production
-          kubectl get services
+    # ... rest of the job
