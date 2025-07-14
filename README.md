@@ -314,3 +314,14 @@ kubectl describe deployment go-service-deployment
 # Network debugging
 kubectl run debug --image=alpine --rm -it -- /bin/sh
 ```
+
+## Result 
+1. Get the pod 
+![get pod](images/get-pod.png)
+
+2. Get service
+![get service](images/service.png)
+
+3. Result in browser
+![result](images/go-inbrowser.png)
+![js](images/js.png)
